@@ -43,6 +43,14 @@ python3 adobe_msp_scanner.py daily
 
 The daily scan prints a JSON report containing the probe anchors, any newly found versions, and any anomalies.
 
+Run a scan without updating the state file (either mode):
+
+```bash
+python3 adobe_msp_scanner.py daily --dry-run
+```
+
+In dry-run mode the scanner probes and reports as usual, but the state file is not written, so the next real run re-probes the same window. The JSON report carries a `"dry_run": true` marker. `--help` prints the usage text and exits; unknown arguments exit with an error instead of starting a scan.
+
 ## State file
 
 By default, the scanner reads and writes:

@@ -34,8 +34,11 @@ Release Notes anchor:
   ignored as anchors.
 
 Usage:
-    python3 adobe_msp_scanner.py init    # one-time full-range bootstrap
-    python3 adobe_msp_scanner.py daily   # forward-only incremental scan
+    python3 adobe_msp_scanner.py init            # one-time full-range bootstrap
+    python3 adobe_msp_scanner.py daily           # forward-only incremental scan
+    python3 adobe_msp_scanner.py daily --dry-run # scan and report only;
+                                                 # the state file is NOT written
+    python3 adobe_msp_scanner.py --help          # print this text and exit
 
 Only HEAD requests are made; nothing is downloaded.
 """
@@ -332,10 +335,11 @@ def record_latest(ps, product, info):
 # Modes
 # --------------------------------------------------------------------------
 
-def do_init():
+def do_init(dry_run=False):
     """One-time bootstrap: scan the configured historical range on the
     configured branch, then extend upward while the top stays live, to
-    establish the high-water mark."""
+    establish the high-water mark. With dry_run=True the scan and summary
+    run as usual but the state file is NOT written."""
     state = {"products": {}}
     summary = {}
     for key, product in PRODUCTS.items():
@@ -377,18 +381,25 @@ def do_init():
             "latest_display": ps["latest_display"],
             "latest_size": latest_info["size"] if latest_info else None,
         }
-    save_state(state)
+    if dry_run:
+        summary["_meta"] = {"dry_run": True, "state_written": False}
+    else:
+        save_state(state)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
-def do_daily():
+def do_daily(dry_run=False):
     """Forward-only scan with automatic branch continuation (see module
     docstring). the Release Notes anchor extends the window but never skips
-    an announced build; only server-confirmed builds are written back."""
+    an announced build; only server-confirmed builds are written back.
+    With dry_run=True the scan and report run as usual but the state file
+    is NOT written, so the next real run re-probes the same window."""
     state = load_state()
     rn_latest = fetch_release_notes_latest()
     report = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
               "anchor": {}, "new": {}, "anomalies": []}
+    if dry_run:
+        report["dry_run"] = True
 
     for key, product in PRODUCTS.items():
         ps = state["products"].get(key, {})
@@ -460,14 +471,30 @@ def do_daily():
                 "versions": new_infos,
             }
 
-    save_state(state)
+    if not dry_run:
+        save_state(state)
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
+USAGE = ("Usage: adobe_msp_scanner.py [init|daily] [--dry-run]\n"
+         "       adobe_msp_scanner.py --help")
+
+
 if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else "daily"
+    args = sys.argv[1:]
+    if any(a in ("-h", "--help", "help") for a in args):
+        print(__doc__)
+        sys.exit(0)
+    dry_run = "--dry-run" in args
+    positional = [a for a in args if not a.startswith("-")]
+    unknown_flags = [a for a in args
+                     if a.startswith("-") and a != "--dry-run"]
+    mode = positional[0] if positional else "daily"
+    if unknown_flags or len(positional) > 1 or mode not in ("init", "daily"):
+        print(USAGE, file=sys.stderr)
+        sys.exit(2)
     os.makedirs(BASE_DIR, exist_ok=True)
     if mode == "init":
-        do_init()
+        do_init(dry_run=dry_run)
     else:
-        do_daily()
+        do_daily(dry_run=dry_run)
